@@ -39,64 +39,89 @@ end
 function cursor_methods:limit(n)
     assert(n)
     self.limit_n = n
+    if n <= self.num_each then
+        self.num_each = n
+    end
+    return self
 end
 
---todo
---function cursor_methods:skip(n)
+function cursor_methods:skip(n)
+    self.skip_ = n
+    return self
+end
 
-function cursor_methods:sort(field, size)
-    size = size or 10000
-    if size < 2 then return nil, "number of object must > 1" end
-    if not field then return nil, "field should not be nil" end
+function cursor_methods:sort(_sort)
+    self.sort_ = _sort
+    return self
+end
 
-    local key, asc, t
-    for k,v in pairs(field) do
-        key = k
-        asc = v
-        break
+function cursor_methods:build_query()
+    local ext = {}
+    if self.sort_ then
+        ext["$orderby"] = self.sort_
     end
-    if asc ~= 1 and asc ~= -1 then return nil, "order must be 1 or -1" end
 
-    local sort_f = 
-            function(a, b) 
-                if not a and not b then return false end
-                if not a then return true end
-                if not b then return false end
-                if not a[key] and not b[key] then return false end
-                if not a[key] then return true end
-                if not b[key] then return false end
-                if asc == 1 then
-                    return a[key] < b[key]
-                else
-                    return a[key] > b[key]
-                end
-            end
-
-    if #self.results > self.i then
-        table.sort(self.results, sort_f)
-    elseif #self.results == 0 and self.i == 0 then
-        if self.num_each == 0 and self.limit_n ~= 0 then
-            size = self.limit_n
-        elseif self.num_each ~= 0 and self.limit_n == 0 then
-            size = self.num_each
-        else
-            size = (self.num_each < self.limit_n 
-                        and self.num_each) or self.limit_n
-        end
-        
-        self.id, self.results, t = self.col:query(self.query, 
-                        self.returnfields, self.i, size)
-        table.sort(self.results, sort_f)
+    if next(ext) then
+        ext["$query"] = self.query
+        return ext
     else
-        return nil, "sort must be an array"
+        return self.query
     end
-    return self.results
 end
+
+--function cursor_methods:sort(field, size)
+--    size = size or 10000
+--    if size < 2 then return nil, "number of object must > 1" end
+--    if not field then return nil, "field should not be nil" end
+--
+--    local key, asc, t
+--    for k,v in pairs(field) do
+--        key = k
+--        asc = v
+--        break
+--    end
+--    if asc ~= 1 and asc ~= -1 then return nil, "order must be 1 or -1" end
+--
+--    local sort_f = 
+--            function(a, b) 
+--                if not a and not b then return false end
+--                if not a then return true end
+--                if not b then return false end
+--                if not a[key] and not b[key] then return false end
+--                if not a[key] then return true end
+--                if not b[key] then return false end
+--                if asc == 1 then
+--                    return a[key] < b[key]
+--                else
+--                    return a[key] > b[key]
+--                end
+--            end
+--
+--    if #self.results > self.i then
+--        table.sort(self.results, sort_f)
+--    elseif #self.results == 0 and self.i == 0 then
+--        if self.num_each == 0 and self.limit_n ~= 0 then
+--            size = self.limit_n
+--        elseif self.num_each ~= 0 and self.limit_n == 0 then
+--            size = self.num_each
+--        else
+--            size = (self.num_each < self.limit_n 
+--                        and self.num_each) or self.limit_n
+--        end
+--        
+--        self.id, self.results, t = self.col:query(self.query, 
+--                        self.returnfields, self.i, size)
+--        table.sort(self.results, sort_f)
+--    else
+--        return nil, "sort must be an array"
+--    end
+--    return self.results
+--end
 
 function cursor_methods:next()
     if self.limit_n > 0 and self.i >= self.limit_n then return nil end
 
-    local v = self.results [ self.i + 1 ]
+    local v = self.results [ self.i - (self.latest or 0) + 1 ]
     if v ~= nil then
         self.i = self.i + 1
         self.results [ self.i ] = nil
@@ -107,8 +132,9 @@ function cursor_methods:next()
 
     local t
     if not self.id then
-        self.id, self.results, t = self.col:query(self.query, 
-                        self.returnfields, self.i, self.num_each)
+        local query = self:build_query()
+        self.id, self.results, t = self.col:query(query, 
+                        self.returnfields, self.skip_ or self.i, self.num_each)
         if self.id == "\0\0\0\0\0\0\0\0" then
             self.done = true
         end
@@ -120,6 +146,8 @@ function cursor_methods:next()
         elseif t.CursorNotFound then
             self.id = false
         end
+
+        self.latest = self.i
     end
     return self:next ( )
 end

@@ -208,9 +208,24 @@ function to_bson(ob)
 	return num_to_le_uint ( #m + 4 + 1 ) .. m .. "\0" , retarray
 end
 
+function to_bson_order(...)
+    local ob = {...}
+    local r = { }
+    local count = #ob
+	local retarray , m = false
+    for i = 1, count, 2 do
+        --ngx.log(ngx.ERR,"="..ob[i]..",type,"..type(ob[i+1]) )
+        t_insert( r, pack( ob[i], ob[i+1], true ) )
+    end
+    m = t_concat ( r )
+	return num_to_le_uint ( #m + 4 + 1 ) .. m .. "\0" , retarray
+end
+
 return {
 	from_bson = from_bson ;
 	to_bson = to_bson ;
+	to_bson_order = to_bson_order;
+	encode_order = to_bson_order;
     get_bin_data = get_bin_data;
     get_utc_date = get_utc_date;
 }

@@ -8,6 +8,7 @@ local pcall = pcall
 
 local colmt = require ( mod_name .. ".colmt" )
 local gridfs = require ( mod_name .. ".gridfs" )
+local bson = require(mod_name .. ".bson")
 
 local dbmethods = { }
 local dbmt = { __index = dbmethods }
@@ -29,6 +30,22 @@ function dbmethods:cmd(q)
     end
 end
 
+function dbmethods:cmd_raw(q)
+    local collection = "$cmd"
+    local col = self:get_col(collection)
+    
+    local c_id , r , t = col:query_raw(q)
+
+    if t.QueryFailure then
+        return nil, "Query Failure"
+    elseif not r[1] then
+        return nil, "No results returned"
+    elseif r[1].ok == 0 then -- Failure
+        return nil , r[1].errmsg , r[1] , t
+    else
+        return r[1]
+    end
+end
 function dbmethods:listcollections ( )
     local col = self:get_col("system.namespaces")
     return col:find( { } )
@@ -40,6 +57,43 @@ function dbmethods:dropDatabase ( )
         return nil, err
     end
     return 1
+end
+
+function dbmethods:create_view(view, source, pipeline)
+    if not source then
+        return nil, "source invalid"
+    end
+    local op = bson.encode_order("create", view, "viewOn", source,
+        "pipeline", pipeline)
+    return self:cmd_raw(op)
+end
+
+function dbmethods:list_view(query, fields)
+    local col = self:get_col("system.views")
+    local cur, err = col:find(query or {}, fields)
+    if not cur then
+        return nil, err
+    end
+    local rlt = {}
+    for k, v in cur:pairs() do
+        rlt[k] = v
+    end
+    return rlt
+end
+
+function dbmethods:query_view(view)
+    local col = self:get_col("system.views")
+    return col:find_one({_id = self.db .. "." .. view})
+end
+
+function dbmethods:run_command(...)
+    local op = bson.encode_order(...)
+    return self:cmd_raw(op)
+end
+
+function dbmethods:admin_command(...)
+    local db = self.conn:new_db_handle("admin")
+    return db:run_command(...)
 end
 
 local function pass_digest ( username , password )
@@ -102,7 +156,7 @@ function dbmethods:auth_scram_sha1(username, password)
     local first_bare = "n="  .. user .. ",r="  .. nonce
     local sasl_start_payload = ngx.encode_base64("n,," .. first_bare)
     
-    r, err = self:cmd(attachpairs_start({
+    local r, err = self:cmd(attachpairs_start({
             saslStart = 1 ;
             mechanism = "SCRAM-SHA-1" ;
             autoAuthorize = 1 ;

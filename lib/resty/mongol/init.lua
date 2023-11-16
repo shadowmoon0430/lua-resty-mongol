@@ -37,7 +37,7 @@ function connmethods:getprimary ( searched )
         return nil, "query admin failed: "..err
     elseif r.ismaster then return self 
     else
-        for i , v in ipairs ( r.hosts ) do
+        for i , v in pairs ( r.hosts ) do
             if not searched[v] then
                 searched[v] = true
                 local host, port = parse_host(v)
@@ -106,12 +106,12 @@ function connmethods:get_reused_times()
     return sock:getreusedtimes()
 end
 
-function connmethods:connect(host, port)
+function connmethods:connect(host, port, opt)
     self.host = host or self.host
     self.port = port or self.port
     local sock = self.sock
 
-    return sock:connect(self.host, self.port)
+    return sock:connect(self.host, self.port, opt)
 end
 
 function connmethods:close()
